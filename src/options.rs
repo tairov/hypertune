@@ -156,6 +156,10 @@ pub enum CommandOutputPolicy {
 
     /// Show command output on the terminal
     Inherit,
+
+    /// Capture command output and add it to the report
+    /// output value must be convertible to float
+    Report
 }
 
 impl CommandOutputPolicy {
@@ -165,6 +169,8 @@ impl CommandOutputPolicy {
 
             // Typically only stdout is performance-relevant, so just pipe that
             CommandOutputPolicy::Pipe => (Stdio::piped(), Stdio::null()),
+
+            CommandOutputPolicy::Report => (Stdio::piped(), Stdio::null()),
 
             CommandOutputPolicy::File(path) => {
                 let file = File::create(path)?;
@@ -233,6 +239,8 @@ pub struct Options {
 
     /// Which time unit to use when displaying results
     pub time_unit: Option<Unit>,
+
+    pub memory_usage: bool,
 }
 
 impl Default for Options {
@@ -252,6 +260,7 @@ impl Default for Options {
             command_output_policy: CommandOutputPolicy::Null,
             time_unit: None,
             command_input_policy: CommandInputPolicy::Null,
+            memory_usage: false,
         }
     }
 }
@@ -312,6 +321,7 @@ impl Options {
             match output {
                 "null" => CommandOutputPolicy::Null,
                 "pipe" => CommandOutputPolicy::Pipe,
+                "report" => CommandOutputPolicy::Report,
                 "inherit" => CommandOutputPolicy::Inherit,
                 arg => {
                     let path = PathBuf::from(arg);
@@ -324,6 +334,8 @@ impl Options {
         } else {
             CommandOutputPolicy::Null
         };
+
+        options.memory_usage = matches.get_flag("mem-usage");
 
         options.output_style = match matches.get_one::<String>("style").map(|s| s.as_str()) {
             Some("full") => OutputStyleOption::Full,

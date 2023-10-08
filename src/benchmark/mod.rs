@@ -3,11 +3,12 @@ pub mod executor;
 pub mod relative_speed;
 pub mod scheduler;
 pub mod timing_result;
+pub mod custom_metric;
 
 use std::cmp;
 
 use crate::command::Command;
-use crate::options::{CmdFailureAction, ExecutorKind, Options, OutputStyleOption};
+use crate::options::{CmdFailureAction, CommandOutputPolicy, ExecutorKind, Options, OutputStyleOption};
 use crate::outlier_detection::{modified_zscores, OUTLIER_THRESHOLD};
 use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::get_progress_bar;
@@ -22,6 +23,7 @@ use timing_result::TimingResult;
 use anyhow::{anyhow, Result};
 use colored::*;
 use statistical::{mean, median, standard_deviation};
+use crate::benchmark::custom_metric::{CustomMetric, MemUsageMetric};
 
 use self::executor::Executor;
 
@@ -124,6 +126,8 @@ impl<'a> Benchmark<'a> {
         let mut times_real: Vec<Second> = vec![];
         let mut times_user: Vec<Second> = vec![];
         let mut times_system: Vec<Second> = vec![];
+        let mut custom_metrics: Vec<CustomMetric> = vec![];
+        let mut mem_usage: Vec<MemUsageMetric> = vec![];
         let mut exit_codes: Vec<Option<i32>> = vec![];
         let mut all_succeeded = true;
 
@@ -188,7 +192,7 @@ impl<'a> Benchmark<'a> {
             preparation_result.map_or(0.0, |res| res.time_real + self.executor.time_overhead());
 
         // Initial timing run
-        let (res, status) = self.executor.run_command_and_measure(self.command, None)?;
+        let (res, status, metric, mem_use) = self.executor.run_command_and_measure(self.command, None)?;
         let success = status.success();
 
         // Determine number of benchmark runs
@@ -213,6 +217,10 @@ impl<'a> Benchmark<'a> {
         times_real.push(res.time_real);
         times_user.push(res.time_user);
         times_system.push(res.time_system);
+        custom_metrics.push(metric);
+        if self.options.memory_usage {
+            mem_usage.push(mem_use);
+        }
         exit_codes.push(extract_exit_code(status));
 
         all_succeeded = all_succeeded && success;
@@ -238,12 +246,16 @@ impl<'a> Benchmark<'a> {
                 bar.set_message(msg.to_owned())
             }
 
-            let (res, status) = self.executor.run_command_and_measure(self.command, None)?;
+            let (res, status, metric, mem_use) = self.executor.run_command_and_measure(self.command, None)?;
             let success = status.success();
 
             times_real.push(res.time_real);
             times_user.push(res.time_user);
             times_system.push(res.time_system);
+            custom_metrics.push(metric);
+            if self.options.memory_usage {
+                mem_usage.push(mem_use);
+            }
             exit_codes.push(extract_exit_code(status));
 
             all_succeeded = all_succeeded && success;
@@ -379,6 +391,16 @@ impl<'a> Benchmark<'a> {
             max: t_max,
             times: Some(times_real),
             exit_codes,
+            custom_metrics: if self.options.command_output_policy == CommandOutputPolicy::Report {
+                Some(custom_metrics)
+            } else {
+                None
+            },
+            mem_usage: if self.options.memory_usage {
+                Some(mem_usage)
+            } else {
+                None
+            },
             parameters: self
                 .command
                 .get_parameters()

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
+use crate::benchmark::custom_metric::{CustomMetric, MemUsageMetric};
 
 use crate::util::units::Second;
 
@@ -44,6 +45,14 @@ pub struct BenchmarkResult {
 
     /// Exit codes of all command invocations
     pub exit_codes: Vec<Option<i32>>,
+
+    /// Custom metrics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_metrics: Option<Vec<CustomMetric>>,
+
+    /// Memory usage
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mem_usage: Option<Vec<MemUsageMetric>>,
 
     /// Parameter values for this benchmark
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]

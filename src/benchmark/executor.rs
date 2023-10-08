@@ -12,9 +12,11 @@ use crate::util::randomized_environment_offset;
 use crate::util::units::Second;
 
 use super::timing_result::TimingResult;
+use super::custom_metric::CustomMetric;
 
 use anyhow::{bail, Context, Result};
 use statistical::mean;
+use crate::benchmark::custom_metric::MemUsageMetric;
 
 pub trait Executor {
     /// Run the given command and measure the execution time
@@ -22,7 +24,7 @@ pub trait Executor {
         &self,
         command: &Command<'_>,
         command_failure_action: Option<CmdFailureAction>,
-    ) -> Result<(TimingResult, ExitStatus)>;
+    ) -> Result<(TimingResult, ExitStatus, CustomMetric, MemUsageMetric)>;
 
     /// Perform a calibration of this executor. For example,
     /// when running commands through a shell, we need to
@@ -43,6 +45,7 @@ fn run_command_and_measure_common(
     command_input_policy: &CommandInputPolicy,
     command_output_policy: &CommandOutputPolicy,
     command_name: &str,
+    collect_mem_usage: bool,
 ) -> Result<TimerResult> {
     let stdin = command_input_policy.get_stdin()?;
     let (stdout, stderr) = command_output_policy.get_stdout_stderr()?;
@@ -53,7 +56,7 @@ fn run_command_and_measure_common(
         randomized_environment_offset::value(),
     );
 
-    let result = execute_and_measure(command)
+    let result = execute_and_measure(command, command_output_policy, collect_mem_usage)
         .with_context(|| format!("Failed to run command '{}'", command_name))?;
 
     if command_failure_action == CmdFailureAction::RaiseError && !result.status.success() {
@@ -85,13 +88,14 @@ impl<'a> Executor for RawExecutor<'a> {
         &self,
         command: &Command<'_>,
         command_failure_action: Option<CmdFailureAction>,
-    ) -> Result<(TimingResult, ExitStatus)> {
+    ) -> Result<(TimingResult, ExitStatus, CustomMetric, MemUsageMetric)> {
         let result = run_command_and_measure_common(
             command.get_command()?,
             command_failure_action.unwrap_or(self.options.command_failure_action),
             &self.options.command_input_policy,
             &self.options.command_output_policy,
             &command.get_command_line(),
+            self.options.memory_usage,
         )?;
 
         Ok((
@@ -101,6 +105,8 @@ impl<'a> Executor for RawExecutor<'a> {
                 time_system: result.time_system,
             },
             result.status,
+            result.custom_metric,
+            result.mem_usage,
         ))
     }
 
@@ -134,7 +140,7 @@ impl<'a> Executor for ShellExecutor<'a> {
         &self,
         command: &Command<'_>,
         command_failure_action: Option<CmdFailureAction>,
-    ) -> Result<(TimingResult, ExitStatus)> {
+    ) -> Result<(TimingResult, ExitStatus, CustomMetric, MemUsageMetric)> {
         let on_windows_cmd = cfg!(windows) && *self.shell == Shell::Default("cmd.exe");
         let mut command_builder = self.shell.command();
         command_builder.arg(if on_windows_cmd { "/C" } else { "-c" });
@@ -153,6 +159,7 @@ impl<'a> Executor for ShellExecutor<'a> {
             &self.options.command_input_policy,
             &self.options.command_output_policy,
             &command.get_command_line(),
+            self.options.memory_usage,
         )?;
 
         // Subtract shell spawning time
@@ -169,6 +176,8 @@ impl<'a> Executor for ShellExecutor<'a> {
                 time_system: result.time_system,
             },
             result.status,
+            result.custom_metric,
+            result.mem_usage
         ))
     }
 
@@ -206,7 +215,7 @@ impl<'a> Executor for ShellExecutor<'a> {
                         shell_cmd
                     );
                 }
-                Ok((r, _)) => {
+                Ok((r, _, _, _)) => {
                     times_real.push(r.time_real);
                     times_user.push(r.time_user);
                     times_system.push(r.time_system);
@@ -261,15 +270,15 @@ impl Executor for MockExecutor {
         &self,
         command: &Command<'_>,
         _command_failure_action: Option<CmdFailureAction>,
-    ) -> Result<(TimingResult, ExitStatus)> {
+    ) -> Result<(TimingResult, ExitStatus, CustomMetric, MemUsageMetric)> {
         #[cfg(unix)]
-        let status = {
+            let status = {
             use std::os::unix::process::ExitStatusExt;
             ExitStatus::from_raw(0)
         };
 
         #[cfg(windows)]
-        let status = {
+            let status = {
             use std::os::windows::process::ExitStatusExt;
             ExitStatus::from_raw(0)
         };
@@ -281,6 +290,8 @@ impl Executor for MockExecutor {
                 time_system: 0.0,
             },
             status,
+            CustomMetric::default(),
+            MemUsageMetric::default()
         ))
     }
 

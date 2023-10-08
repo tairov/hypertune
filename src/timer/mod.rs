@@ -23,6 +23,9 @@ use std::io::Read;
 use std::process::{ChildStdout, Command, ExitStatus};
 
 use anyhow::Result;
+use crate::options::CommandOutputPolicy;
+use wait4::Wait4;
+use crate::benchmark::custom_metric::MemUsageMetric;
 
 #[cfg(not(windows))]
 #[derive(Debug, Copy, Clone)]
@@ -43,6 +46,8 @@ pub struct TimerResult {
 
     /// The exit status of the process
     pub status: ExitStatus,
+    pub custom_metric: f64,
+    pub mem_usage: MemUsageMetric,
 }
 
 /// Discard the output of a child process.
@@ -77,9 +82,9 @@ fn discard(output: ChildStdout) {
 }
 
 /// Execute the given command and return a timing summary
-pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
+pub fn execute_and_measure(mut command: Command, output_policy: &CommandOutputPolicy, collect_mem_usage: bool) -> Result<TimerResult> {
     #[cfg(not(windows))]
-    let cpu_timer = self::unix_timer::CPUTimer::start();
+        let cpu_timer = self::unix_timer::CPUTimer::start();
 
     #[cfg(windows)]
     {
@@ -93,25 +98,47 @@ pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
     let mut child = command.spawn()?;
 
     #[cfg(windows)]
-    let cpu_timer = {
+        let cpu_timer = {
         // SAFETY: We created a suspended process
         unsafe { self::windows_timer::CPUTimer::start_suspended_process(&child) }
     };
 
-    if let Some(output) = child.stdout.take() {
+    let mut custom_metric: f64 = 0.0;
+
+    if let Some(mut output) = child.stdout.take() {
         // Handle CommandOutputPolicy::Pipe
+        if output_policy == &CommandOutputPolicy::Report {
+            let mut s_metric = String::new();
+            output.read_to_string(&mut s_metric).expect("Can't read from stdout");
+
+            s_metric = s_metric.trim().to_string();
+            custom_metric = match s_metric.trim().parse() {
+                Ok(v) => v,
+                Err(_) => 0.0 // or whatever error handling
+            };
+        }
         discard(output);
     }
 
-    let status = child.wait()?;
+    let status: ExitStatus;
+    let mut mem_usage: MemUsageMetric = None;
+
+    if collect_mem_usage {
+        let res = child.wait4()?;
+        status = res.status;
+        mem_usage = Some(res.rusage.maxrss);
+    } else {
+        status = child.wait()?;
+    }
 
     let time_real = wallclock_timer.stop();
     let (time_user, time_system) = cpu_timer.stop();
-
     Ok(TimerResult {
         time_real,
         time_user,
         time_system,
         status,
+        custom_metric,
+        mem_usage
     })
 }

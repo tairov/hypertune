@@ -305,6 +305,8 @@ fn build_command() -> Command {
                      \n  \
                        inherit:  Don't redirect the output at all (same as '--show-output').\n\
                      \n  \
+                       report:   Capture the output to report file\n\
+                     \n  \
                        <FILE>:   Write the output to the given file.",
                 ),
         )
@@ -342,6 +344,13 @@ fn build_command() -> Command {
             .help("Set the minimum time (in seconds) to run benchmarks. Note that the number of \
                    benchmark runs is additionally influenced by the `--min-runs`, `--max-runs`, and \
                    `--runs` option.")
+        )
+        .arg(
+            Arg::new("mem-usage")
+                .long("mem-usage")
+                .short('g')
+                .action(ArgAction::SetTrue)
+                .help("Collect memory usage of running commands.")
         )
         .arg(
             Arg::new("debug-mode")
