@@ -1,4 +1,13 @@
-# hyperfine
+## hypertune
+
+customized hyperfine with few more features
+
+* export memory usage
+* export custom_metric captured from command output
+* capture `perf stat` output as a custom_metric
+
+
+## hyperfine
 [![CICD](https://github.com/sharkdp/hyperfine/actions/workflows/CICD.yml/badge.svg)](https://github.com/sharkdp/hyperfine/actions/workflows/CICD.yml)
 [![Version info](https://img.shields.io/crates/v/hyperfine.svg)](https://crates.io/crates/hyperfine)
 [中文](https://github.com/chinanf-boy/hyperfine-zh)

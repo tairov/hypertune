@@ -2,11 +2,11 @@
 authors = ["David Peter <mail@david-peter.de>"]
 categories = ["command-line-utilities"]
 description = "A command-line benchmarking tool"
-homepage = "https://github.com/sharkdp/hyperfine"
+homepage = "https://github.com/tairov/hypertune"
 license = "MIT OR Apache-2.0"
-name = "hyperfine"
+name = "hypertune"
 readme = "README.md"
-repository = "https://github.com/sharkdp/hyperfine"
+repository = "https://github.com/tairov/hypertune"
 version = "1.18.0"
 edition = "2018"
 build = "build.rs"
